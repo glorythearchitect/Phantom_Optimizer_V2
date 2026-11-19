@@ -64,8 +64,8 @@ def set_power_plan(name_or_guid: str) -> bool:
                 break
         if not match:
             return False
-        subprocess.run(f"powercfg /S {match}", shell=True, check=False)
-        return True
+        result = subprocess.run(f"powercfg /S {match}", shell=True, check=False)
+        return result.returncode == 0
     except Exception:
         return False
 
