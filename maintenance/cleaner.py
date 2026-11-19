@@ -1,6 +1,6 @@
 """
 maintenance/cleaner.py
-Performs safe, reversible system cleanup operations for Phantom Optimizer.
+Performs targeted system cleanup operations for Phantom Optimizer.
 - Reports actual bytes freed (delta before/after), not aspirational size.
 - Thumbnail cache is scoped to thumbcache_*/iconcache_* files only.
 - Windows Update cache cleanup is DISM-free (StartComponentCleanup is
@@ -20,7 +20,6 @@ CLEAN_PATHS = {
     "Temp": os.environ.get("TEMP", r"C:\Windows\Temp"),
     "Prefetch": r"C:\Windows\Prefetch",
     "WindowsUpdateCache": r"C:\Windows\SoftwareDistribution\Download",
-    "Logs": r"C:\Windows\Logs",
 }
 
 # These folders are cleaned surgically by prefix
@@ -32,7 +31,6 @@ THUMBNAIL_PREFIXES = ("thumbcache_", "iconcache_")
 BROWSER_CACHES = {
     "Edge": os.path.expandvars(r"%LocalAppData%\Microsoft\Edge\User Data\Default\Cache"),
     "Chrome": os.path.expandvars(r"%LocalAppData%\Google\Chrome\User Data\Default\Cache"),
-    "Firefox": os.path.expandvars(r"%AppData%\Mozilla\Firefox\Profiles"),
 }
 
 
@@ -58,18 +56,29 @@ def _folder_size(path: str) -> int:
 
 
 def _safe_delete(path: str) -> int:
-    """Delete a file/folder. Returns bytes that ACTUALLY disappeared."""
-    if not os.path.exists(path):
+    """
+    Delete a selected cache/temp target without deleting its parent directory.
+    Returns bytes that actually disappeared. Symlinks are unlinked, never followed.
+    """
+    if not os.path.lexists(path):
         return 0
     before = _folder_size(path)
     try:
-        if os.path.isfile(path):
+        if os.path.islink(path) or os.path.isfile(path):
             os.remove(path)
         elif os.path.isdir(path):
-            shutil.rmtree(path, ignore_errors=True)
-    except Exception:
+            # Preserve the configured directory itself; remove only its contents.
+            for entry in os.scandir(path):
+                try:
+                    if entry.is_symlink() or entry.is_file(follow_symlinks=False):
+                        os.remove(entry.path)
+                    elif entry.is_dir(follow_symlinks=False):
+                        shutil.rmtree(entry.path, ignore_errors=False)
+                except OSError:
+                    continue
+    except OSError:
         pass
-    after = _folder_size(path) if os.path.exists(path) else 0
+    after = _folder_size(path) if os.path.lexists(path) else 0
     return max(0, before - after)
 
 
