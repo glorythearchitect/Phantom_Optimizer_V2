@@ -46,8 +46,8 @@ def _small_file_io(test_dir, count, size_kb):
     for _ in range(count):
         try:
             fd, p = tempfile.mkstemp(prefix="phantom_io_", suffix=".tmp", dir=test_dir)
-            os.close(fd)
             paths.append(p)
+            os.close(fd)
             with open(p, "wb") as f:
                 f.write(payload)
                 f.flush()
@@ -94,11 +94,14 @@ def run_disk_speed_test(
             except Exception: pass
 
     test_dir = tempfile.gettempdir()
-    fd, test_file = tempfile.mkstemp(prefix="phantom_disk_test_", suffix=".tmp", dir=test_dir)
-    os.close(fd)
+    test_file = None
     start_total = time.perf_counter()
 
     try:
+        fd, test_file = tempfile.mkstemp(
+            prefix="phantom_disk_test_", suffix=".tmp", dir=test_dir
+        )
+        os.close(fd)
         emit(10, "Sequential write...")
         write_time = _write_sequential(test_file, size_mb)
         write_speed = round(size_mb / write_time, 2) if write_time > 0 else 0.0
@@ -136,7 +139,8 @@ def run_disk_speed_test(
     except Exception as e:
         return {"error": str(e)}
     finally:
-        try:
-            os.remove(test_file)
-        except Exception:
-            pass
+        if test_file:
+            try:
+                os.remove(test_file)
+            except Exception:
+                pass
