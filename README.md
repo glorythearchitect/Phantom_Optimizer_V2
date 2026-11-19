@@ -57,7 +57,7 @@ excludes matching process names from termination.
   Writes are flushed with `fsync`; sequential reads may be served from the
   Windows file cache, so they are not guaranteed uncached device measurements.
   IOPS are calculated from successfully completed file operations.
-- **Memory** — sampled multi-pattern check over a 256 MB allocation
+- **Memory** — sampled multi-pattern check over a 512 MB allocation
   (0x00, 0xFF, 0xAA, 0x55, ramp). It samples one byte per 4 KiB by default;
   it is a lightweight check, not a full RAM diagnostic or a MemTest86 replacement.
 - **GPU Pulse** — Mandelbrot fill rate + ALU throughput, with a live preview window.
