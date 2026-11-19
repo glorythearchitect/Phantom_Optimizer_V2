@@ -1,24 +1,25 @@
 """
 performance/mem_test.py
-Memory integrity test — multi-pattern verification.
+Sampled memory check — multi-pattern verification.
 
-Tests 5 patterns over a bounded block (default 256 MB):
+Samples 5 patterns across a bounded allocation (default 256 MB):
   0x00  — all zeros (stuck-at-1 detection)
   0xFF  — all ones  (stuck-at-0 detection)
   0xAA  — alternating bits
   0x55  — inverse alternating
   ramp  — sequential values (addressing/ordering errors)
 
-This is the same class of test memtest86 runs before deep stress.
-Does NOT attempt to hit peak RAM bandwidth (Python interpreter overhead
-would dominate); its value is correctness, not throughput.
+This is a lightweight sampled check, not a substitute for MemTest86 or a full
+memory diagnostic. With the default 4096-byte interval, one byte per 4 KiB is
+verified for each pattern. It does NOT validate every byte or guarantee detection
+of all memory faults.
 """
 import ctypes
 import time
 
 
 def _pattern_pass(arr, total_bytes, step, pattern_fn):
-    """Write pattern, read back, count mismatches."""
+    """Write and verify one sample at each configured interval."""
     for i in range(0, total_bytes, step):
         arr[i] = pattern_fn(i)
     errors = 0
@@ -30,7 +31,7 @@ def _pattern_pass(arr, total_bytes, step, pattern_fn):
 
 def run_memory_check(size_mb=256, pattern_interval=4096, progress_cb=None) -> dict:
     """
-    Multi-pattern memory integrity check.
+    Lightweight multi-pattern sampled memory check.
 
     Backward compat: `passed`, `checked_mb`, `errors`, `duration` present
     so existing UI works unchanged.
