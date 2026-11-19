@@ -40,15 +40,20 @@ BROWSER_CACHES = {
 
 def _folder_size(path: str) -> int:
     total = 0
+    if os.path.islink(path):
+        return 0
     if not os.path.isdir(path):
         try:
-            return os.path.getsize(path)
+            return 0 if os.path.islink(path) else os.path.getsize(path)
         except Exception:
             return 0
-    for root, _, files in os.walk(path, topdown=True):
+    for root, dirs, files in os.walk(path, topdown=True, followlinks=False):
+        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
         for f in files:
             try:
                 fp = os.path.join(root, f)
+                if os.path.islink(fp):
+                    continue
                 total += os.path.getsize(fp)
             except Exception:
                 continue
@@ -94,6 +99,8 @@ def _clean_thumbnail_files():
                     continue
                 fp = os.path.join(folder, fn)
                 try:
+                    if os.path.islink(fp) or not os.path.isfile(fp):
+                        continue
                     size = os.path.getsize(fp)
                     os.remove(fp)
                     freed += size
