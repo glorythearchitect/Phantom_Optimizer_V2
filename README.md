@@ -190,7 +190,7 @@ CPU and disk test thresholds are documented inline in their test modules
 |---|---|---|
 | `whitelist.txt` | `<project root>` | `%APPDATA%\PhantomOptimizer\` |
 | Report exports | `%USERPROFILE%` (File dialog default) | Same |
-| Disk test temp | `%TEMP%\phantom_disk_test.tmp` | Same |
+| Disk test temp files | `%TEMP%\\phantom_disk_test_*.tmp` and `%TEMP%\\phantom_io_*.tmp` | Same |
 | GPU test tmp | In-memory (no file) | Same |
 
 Nothing is written to the repo, to Program Files, or to the registry unless you
