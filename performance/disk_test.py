@@ -39,17 +39,20 @@ def _small_file_io(test_dir, count, size_kb):
     """Write then read `count` files of size_kb KB. fsync each write."""
     payload = os.urandom(size_kb * 1024)
     paths = []
+    successful_writes = 0
     successful_reads = 0
 
     write_start = time.perf_counter()
-    for i in range(count):
-        p = os.path.join(test_dir, f"phantom_io_{i}.tmp")
+    for _ in range(count):
         try:
+            fd, p = tempfile.mkstemp(prefix="phantom_io_", suffix=".tmp", dir=test_dir)
+            os.close(fd)
+            paths.append(p)
             with open(p, "wb") as f:
                 f.write(payload)
                 f.flush()
                 os.fsync(f.fileno())
-            paths.append(p)
+            successful_writes += 1
         except Exception:
             continue
     write_dur = time.perf_counter() - write_start
@@ -70,7 +73,7 @@ def _small_file_io(test_dir, count, size_kb):
         except Exception:
             pass
 
-    return write_dur, read_dur, len(paths), successful_reads
+    return write_dur, read_dur, successful_writes, successful_reads
 
 
 def run_disk_speed_test(
@@ -91,7 +94,8 @@ def run_disk_speed_test(
             except Exception: pass
 
     test_dir = tempfile.gettempdir()
-    test_file = os.path.join(test_dir, "phantom_disk_test.tmp")
+    fd, test_file = tempfile.mkstemp(prefix="phantom_disk_test_", suffix=".tmp", dir=test_dir)
+    os.close(fd)
     start_total = time.perf_counter()
 
     try:
