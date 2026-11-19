@@ -45,16 +45,21 @@ Scans can be cancelled after 5 seconds. Full reports can be saved.
 
 ### Optimizer with protected-process detection
 The optimizer identifies user processes, background apps, and system-critical
-processes (marked `CRITICAL`). Only `USER`-tagged processes can be terminated.
+processes (marked `CRITICAL`). The termination backend rechecks the current process name and system/user
+whitelists immediately before acting; it does not rely solely on the UI tag.
 A whitelist file (`whitelist.txt`, stored under `%APPDATA%\PhantomOptimizer\`)
-excludes anything you never want touched.
+excludes matching process names from termination.
 
 ### Honest benchmarks
 - **CPU** — 0.5s warmup, 2s single-thread, 2s multi-thread, jitter and stability
   reported. Thermal gates abort at 90°C.
-- **Disk** — 256 MB sequential write/read (fsync'd, not cache), 50 × 4 KB small-file
-  IOPS. Read/write speeds are real device throughput, not OS cache numbers.
-- **Memory** — 256 MB pattern walk (0x00, 0xFF, 0xAA, 0x55, ramp). Catches stuck bits.
+- **Disk** — 256 MB sequential write/read plus 50 × 4 KB small-file IOPS.
+  Writes are flushed with `fsync`; sequential reads may be served from the
+  Windows file cache, so they are not guaranteed uncached device measurements.
+  IOPS are calculated from successfully completed file operations.
+- **Memory** — sampled multi-pattern check over a 512 MB allocation
+  (0x00, 0xFF, 0xAA, 0x55, ramp). It samples one byte per 4 KiB by default;
+  it is a lightweight check, not a full RAM diagnostic or a MemTest86 replacement.
 - **GPU Pulse** — Mandelbrot fill rate + ALU throughput, with a live preview window.
   Thermal abort at configurable threshold. Requires PyOpenGL.
 
@@ -64,8 +69,9 @@ refused, not stressed. Live monitor shows CPU/GPU/RAM/Disk continuously and
 pauses while a benchmark is active.
 
 ### One-file portable exe
-Ships as a single `PhantomOptimizer.exe` (~150 MB). No Python install required
-on the target machine. UAC elevation is requested automatically on first launch.
+Ships as a single `PhantomOptimizer.exe` (size varies by release/build). No
+Python install is required on the target machine. UAC elevation is requested
+automatically on first launch.
 
 ---
 
@@ -78,8 +84,8 @@ on the target machine. UAC elevation is requested automatically on first launch.
 ## Run from source
 
 ```bat
-git clone https://github.com/glorythearchitect/phantom_optimizer_v2.git
-cd phantom_optimizer
+git clone https://github.com/glorythearchitect/Phantom_Optimizer_V2.git
+cd Phantom_Optimizer_V2
 pip install -r requirements.txt
 python main.py
 ```
@@ -169,10 +175,10 @@ Tunable thresholds live in `core/configs.py`:
 
 | Constant | Meaning | Default |
 |---|---|---|
-| `GPU_TEST_TEMP_WARN_C` | GPU benchmark refuses to start above this temp | 80 °C |
-| `GPU_TEST_TEMP_ABORT_C` | GPU benchmark aborts mid-run above this temp | 88 °C |
+| `GPU_TEST_TEMP_WARN_C` | GPU benchmark refuses to start above this temp | 85 °C |
+| `GPU_TEST_TEMP_ABORT_C` | GPU benchmark aborts mid-run above this temp | 90 °C |
 | `GPU_TEST_DURATION_S` | Total GPU Pulse duration | 8 s |
-| `GPU_TEST_GPU_USE_WARN_PCT` | Warn in dialog if GPU already > N% utilized | 5 % |
+| `GPU_TEST_GPU_USE_WARN_PCT` | Warn in dialog if GPU already > N% utilized | 10 % |
 | `WHITELIST_FILE` | Filename of the process whitelist | `whitelist.txt` |
 
 CPU and disk test thresholds are documented inline in their test modules
@@ -184,7 +190,7 @@ CPU and disk test thresholds are documented inline in their test modules
 |---|---|---|
 | `whitelist.txt` | `<project root>` | `%APPDATA%\PhantomOptimizer\` |
 | Report exports | `%USERPROFILE%` (File dialog default) | Same |
-| Disk test temp | `%TEMP%\phantom_disk_test.tmp` | Same |
+| Disk test temp files | `%TEMP%\\phantom_disk_test_*.tmp` and `%TEMP%\\phantom_io_*.tmp` | Same |
 | GPU test tmp | In-memory (no file) | Same |
 
 Nothing is written to the repo, to Program Files, or to the registry unless you
@@ -200,9 +206,16 @@ temperature limits and refuses to start if the GPU is already hot. **Do not run
 on battery.** Close other GPU-heavy applications first.
 
 ### Process kill
-Every kill action asks for confirmation, lists the exact PIDs and names, and
-excludes processes tagged `CRITICAL` or `SYSTEM`. Phantom Optimizer will not
-kill itself, Windows Explorer, or system services.
+Every kill action asks for confirmation and lists the selected PIDs and names.
+The backend independently blocks PID 0, PID 4, the optimizer itself, and names
+in the built-in or user whitelist. It also rechecks the PID/name identity before
+termination so a stale process-list entry is rejected.
+
+### Cleanup
+Cleanup removes contents of configured temporary/cache targets, not the target
+directories themselves. Firefox profile directories and the broad Windows Logs
+directory are deliberately excluded; browser profile data must never be treated
+as disposable cache.
 
 ### Safe Mode
 Entering Safe Mode reboots the machine. Exit instructions are shown in the

@@ -77,6 +77,7 @@ def clean_ram() -> MemoryResult:
         close_handle.argtypes = [wintypes.HANDLE]
         close_handle.restype = wintypes.BOOL
 
+        trimmed = 0
         for proc in psutil.process_iter(["pid"]):
             pid = proc.info["pid"]
             if pid in skip:
@@ -85,7 +86,8 @@ def clean_ram() -> MemoryResult:
             if not handle:
                 continue
             try:
-                empty(handle)
+                if empty(handle):
+                    trimmed += 1
             except Exception:
                 pass
             finally:
@@ -106,8 +108,13 @@ def clean_ram() -> MemoryResult:
         freed_mb=freed,
         before_mb=round(before, 1),
         after_mb=round(after, 1),
-        success=True,
-        detail="",
+        success=trimmed > 0,
+        detail=(
+            "Working sets trimmed for " + str(trimmed) + " processes. "
+            "The available-memory change is system-wide and is not attributable "
+            "solely to this operation."
+            if trimmed else "No process working set could be trimmed."
+        ),
     )
 
 

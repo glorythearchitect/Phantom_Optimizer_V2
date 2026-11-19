@@ -204,7 +204,7 @@ def _cleanup_legacy_disabled():
 # ----- Public API -----
 
 def list_startup_apps() -> List[Tuple[str, str, str, str]]:
-    _cleanup_legacy_disabled()
+    # Listing is read-only; never migrate or reactivate startup entries here.
     rows = []
 
     # Registry Run entries

@@ -1,11 +1,10 @@
 """
 performance/disk_test.py
-Disk benchmark — sequential throughput + small-file IOPS, fsync'd, honest.
+Disk benchmark — sequential throughput + small-file IOPS.
 
-Note: Without fsync(), Windows write-back caching makes write_speed report
-OS cache throughput (~5-20 GB/s) instead of device throughput. fsync()
-forces the write to the physical device — the number you see is the number
-the disk actually delivered.
+Write measurements flush Python and OS file buffers with fsync. Read measurements
+may still benefit from the Windows file cache; they are not guaranteed to represent
+uncached physical-device throughput.
 """
 import os
 import tempfile
@@ -40,16 +39,20 @@ def _small_file_io(test_dir, count, size_kb):
     """Write then read `count` files of size_kb KB. fsync each write."""
     payload = os.urandom(size_kb * 1024)
     paths = []
+    successful_writes = 0
+    successful_reads = 0
 
     write_start = time.perf_counter()
-    for i in range(count):
-        p = os.path.join(test_dir, f"phantom_io_{i}.tmp")
+    for _ in range(count):
         try:
+            fd, p = tempfile.mkstemp(prefix="phantom_io_", suffix=".tmp", dir=test_dir)
+            paths.append(p)
+            os.close(fd)
             with open(p, "wb") as f:
                 f.write(payload)
                 f.flush()
                 os.fsync(f.fileno())
-            paths.append(p)
+            successful_writes += 1
         except Exception:
             continue
     write_dur = time.perf_counter() - write_start
@@ -59,6 +62,7 @@ def _small_file_io(test_dir, count, size_kb):
         try:
             with open(p, "rb") as f:
                 f.read()
+            successful_reads += 1
         except Exception:
             continue
     read_dur = time.perf_counter() - read_start
@@ -69,7 +73,7 @@ def _small_file_io(test_dir, count, size_kb):
         except Exception:
             pass
 
-    return write_dur, read_dur
+    return write_dur, read_dur, successful_writes, successful_reads
 
 
 def run_disk_speed_test(
@@ -90,10 +94,14 @@ def run_disk_speed_test(
             except Exception: pass
 
     test_dir = tempfile.gettempdir()
-    test_file = os.path.join(test_dir, "phantom_disk_test.tmp")
+    test_file = None
     start_total = time.perf_counter()
 
     try:
+        fd, test_file = tempfile.mkstemp(
+            prefix="phantom_disk_test_", suffix=".tmp", dir=test_dir
+        )
+        os.close(fd)
         emit(10, "Sequential write...")
         write_time = _write_sequential(test_file, size_mb)
         write_speed = round(size_mb / write_time, 2) if write_time > 0 else 0.0
@@ -103,9 +111,11 @@ def run_disk_speed_test(
         read_speed = round(size_mb / read_time, 2) if read_time > 0 else 0.0
 
         emit(60, f"Small-file IOPS ({small_file_count} files)...")
-        w_dur, r_dur = _small_file_io(test_dir, small_file_count, small_file_kb)
-        write_iops = int(small_file_count / w_dur) if w_dur > 0 else 0
-        read_iops = int(small_file_count / r_dur) if r_dur > 0 else 0
+        w_dur, r_dur, writes_ok, reads_ok = _small_file_io(
+            test_dir, small_file_count, small_file_kb
+        )
+        write_iops = int(writes_ok / w_dur) if w_dur > 0 else 0
+        read_iops = int(reads_ok / r_dur) if r_dur > 0 else 0
 
         total_duration = round(time.perf_counter() - start_total, 2)
         emit(100, "Complete")
@@ -122,12 +132,15 @@ def run_disk_speed_test(
             "read_iops": read_iops,
             "small_file_size_kb": small_file_kb,
             "small_file_count": small_file_count,
+            "small_files_written": writes_ok,
+            "small_files_read": reads_ok,
             "error": None,
         }
     except Exception as e:
         return {"error": str(e)}
     finally:
-        try:
-            os.remove(test_file)
-        except Exception:
-            pass
+        if test_file:
+            try:
+                os.remove(test_file)
+            except Exception:
+                pass
