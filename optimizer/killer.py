@@ -5,6 +5,8 @@ Safe process termination and automatic optimization.
 Safety model (enforced at backend, not trustable by UI):
   - PID 0 (System Idle Process) and PID 4 (System) are never touchable.
   - The optimizer's own PID is never touchable.
+  - System and user-whitelisted names are blocked at termination time.
+  - PID/name identity is revalidated immediately before termination.
   - Every termination returns a structured KillResult.
   - No Qt imports, no dialogs. Pure backend.
 """
@@ -14,6 +16,8 @@ from enum import Enum
 from typing import List, Tuple
 
 import psutil
+
+from optimizer.whitelist import load_whitelist
 
 from core.configs import (
     PROCESS_HEAVY_CPU,
@@ -86,8 +90,8 @@ class Candidate:
 # Core termination
 # ===============================
 
-def _terminate_one(pid: int, name: str) -> KillResult:
-    """Terminate a single process with full protection and structured result."""
+def _terminate_one(pid: int, name: str, whitelist: set) -> KillResult:
+    """Terminate a process after revalidating its identity and safety tag."""
     if pid in PROTECTED_PIDS:
         return KillResult(pid, name, KillStatus.PROTECTED, "System-protected PID")
     if pid == get_self_pid():
@@ -103,6 +107,27 @@ def _terminate_one(pid: int, name: str) -> KillResult:
                           "Access denied while opening process")
     except Exception as e:
         return KillResult(pid, name, KillStatus.FAILED, f"Unexpected error: {e}")
+
+    # The UI's process tag is advisory; enforce the current whitelist here.
+    try:
+        current_name = (proc.name() or "").strip()
+        if not current_name or current_name.casefold() != name.strip().casefold():
+            return KillResult(pid, name, KillStatus.FAILED,
+                              "Process identity changed; refresh the process list")
+        protected_names = {entry.casefold() for entry in whitelist}
+        if current_name.casefold() in protected_names:
+            return KillResult(pid, current_name, KillStatus.PROTECTED,
+                              "Process is protected by the system or user whitelist")
+        if not proc.is_running():
+            return KillResult(pid, name, KillStatus.NOT_FOUND,
+                              "Process no longer exists")
+    except psutil.NoSuchProcess:
+        return KillResult(pid, name, KillStatus.NOT_FOUND, "Process no longer exists")
+    except psutil.AccessDenied:
+        return KillResult(pid, name, KillStatus.ACCESS_DENIED,
+                          "Access denied while validating process identity")
+    except Exception as e:
+        return KillResult(pid, name, KillStatus.FAILED, f"Process validation failed: {e}")
 
     # Graceful terminate first
     try:
@@ -147,7 +172,8 @@ def kill_processes(pairs: List[Tuple[int, str]]) -> List[KillResult]:
     Each tuple: (PID, Name).
     Returns a list of KillResult (one per input pair, in order).
     """
-    return [_terminate_one(pid, name) for pid, name in pairs]
+    protected_names = load_whitelist()
+    return [_terminate_one(pid, name, protected_names) for pid, name in pairs]
 
 
 def auto_optimize(
